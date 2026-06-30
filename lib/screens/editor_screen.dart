@@ -186,8 +186,7 @@ class _EditorScreenState extends State<EditorScreen> {
 
   void _atualizarArrasteTransicao(MaquinaModel model, Offset pos) {
     _posicaoArraste.value = pos;
-    var hover = _estadoEmPosicao(pos, model);
-    if (hover == model.origemTransicaoPendente) hover = null;
+    final hover = _estadoEmPosicao(pos, model);
     if (hover != _transicaoDestinoHover) {
       setState(() => _transicaoDestinoHover = hover);
     }
@@ -244,14 +243,16 @@ class _EditorScreenState extends State<EditorScreen> {
     final origem = model.origemTransicaoPendente;
     final destino = _estadoEmPosicao(pos, model);
 
-    if (origem != null && destino != null && origem != destino) {
+    if (origem != null && destino != null) {
       _dialogTransicao(context, model, origem, destino);
     } else {
       _cancelarArrasteTransicao(model);
       if (origem != null && destino == null && _modoTransicao) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Solte sobre outro estado para configurar a transição'),
+            content: Text(
+              'Solte sobre um estado (ou o mesmo, para autotransição)',
+            ),
             duration: Duration(seconds: 2),
           ),
         );
@@ -583,7 +584,8 @@ class _PainelLateral extends StatelessWidget {
             padding: const EdgeInsets.all(12),
             child: Text(
               'Duplo clique no canvas para criar estado.\n'
-              'Transição: ative "Transição" e arraste de uma bolinha até outra.\n'
+              'Transição: ative "Transição" e arraste de uma bolinha até outra '
+              '(ou a mesma, para autotransição).\n'
               'Mover: arraste o círculo (modo normal).',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.outline,
@@ -907,13 +909,18 @@ class _CanvasAutomato extends StatelessWidget {
               builder: (context, cursor, _) {
                 if (cursor == null) return const SizedBox.shrink();
                 final origem = Offset(origemPendente!.x, origemPendente.y);
-                final destino = _destinoVisual(cursor, origem);
+                final autoTransicao = transicaoDestinoHover != null &&
+                    transicaoDestinoHover == model.origemTransicaoPendente;
+                final destino = autoTransicao
+                    ? origem
+                    : _destinoVisual(cursor, origem);
                 return IgnorePointer(
                   child: CustomPaint(
                     size: Size.infinite,
                     painter: TransicaoPendentePainter(
                       origem: origem,
                       destino: destino,
+                      autoTransicao: autoTransicao,
                       cor: transicaoDestinoHover != null
                           ? theme.colorScheme.tertiary
                           : theme.colorScheme.secondary,
@@ -995,7 +1002,7 @@ class _CanvasAutomato extends StatelessWidget {
                         ),
                         child: Text(
                           model.origemTransicaoPendente != null
-                              ? 'Solte sobre o estado de destino'
+                              ? 'Solte no destino (ou no mesmo estado)'
                               : 'Arraste de uma bolinha até outra',
                           style: theme.textTheme.bodyMedium?.copyWith(
                             color: theme.colorScheme.secondary,

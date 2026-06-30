@@ -5,6 +5,50 @@ import 'package:flutter/material.dart';
 import '../core/estado.dart';
 
 const double kRaioEstado = 36;
+const double kAlturaLoopAuto = 52.0;
+const double _anguloInicioLoopAuto = 5 * math.pi / 6; // 150° — borda superior esquerda
+const double _anguloFimLoopAuto = math.pi / 6; // 30° — borda superior direita
+
+/// Laço de autotransição curvado acima do estado (nunca passa pelo interior).
+({Offset inicio, Offset fim, Offset controle1, Offset controle2}) geometriaAutoTransicao(
+  Offset centro,
+) {
+  final inicio = Offset(
+    centro.dx + math.cos(_anguloInicioLoopAuto) * kRaioEstado,
+    centro.dy + math.sin(_anguloInicioLoopAuto) * kRaioEstado,
+  );
+  final fim = Offset(
+    centro.dx + math.cos(_anguloFimLoopAuto) * kRaioEstado,
+    centro.dy + math.sin(_anguloFimLoopAuto) * kRaioEstado,
+  );
+  final abertura = kRaioEstado * 1.1;
+  final topo = centro.dy - kRaioEstado - kAlturaLoopAuto;
+  final controle1 = Offset(centro.dx - abertura, topo);
+  final controle2 = Offset(centro.dx + abertura, topo);
+  return (inicio: inicio, fim: fim, controle1: controle1, controle2: controle2);
+}
+
+Path pathAutoTransicao(Offset centro) {
+  final g = geometriaAutoTransicao(centro);
+  return Path()
+    ..moveTo(g.inicio.dx, g.inicio.dy)
+    ..cubicTo(
+      g.controle1.dx,
+      g.controle1.dy,
+      g.controle2.dx,
+      g.controle2.dy,
+      g.fim.dx,
+      g.fim.dy,
+    );
+}
+
+Offset pontoBezierCubica(Offset p0, Offset p1, Offset p2, Offset p3, double t) {
+  final u = 1 - t;
+  return Offset(
+    u * u * u * p0.dx + 3 * u * u * t * p1.dx + 3 * u * t * t * p2.dx + t * t * t * p3.dx,
+    u * u * u * p0.dy + 3 * u * u * t * p1.dy + 3 * u * t * t * p2.dy + t * t * t * p3.dy,
+  );
+}
 
 class EstadoWidget extends StatefulWidget {
   final Estado estado;
@@ -196,7 +240,17 @@ class TransicaoPainter extends CustomPainter {
     final dx = destino.dx - origem.dx;
     final dy = destino.dy - origem.dy;
     final dist = math.sqrt(dx * dx + dy * dy);
-    if (dist < 1) return;
+
+    final paint = Paint()
+      ..color = ativa ? cor : cor.withValues(alpha: selecionada ? 0.9 : 0.55)
+      ..strokeWidth = ativa ? 3 : (selecionada ? 2.5 : 1.8)
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+
+    if (dist < 1) {
+      _paintAutoTransicao(canvas, origem, paint);
+      return;
+    }
 
     final ux = dx / dist;
     final uy = dy / dist;
@@ -219,15 +273,57 @@ class TransicaoPainter extends CustomPainter {
       ..moveTo(start.dx, start.dy)
       ..quadraticBezierTo(control.dx, control.dy, end.dx, end.dy);
 
-    final paint = Paint()
-      ..color = ativa ? cor : cor.withValues(alpha: selecionada ? 0.9 : 0.55)
-      ..strokeWidth = ativa ? 3 : (selecionada ? 2.5 : 1.8)
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round;
-
     canvas.drawPath(path, paint);
+    _desenharSeta(canvas, start, control, end, paint.color);
+    _desenharRotulos(canvas, _pointOnQuad(start, control, end, 0.5));
+  }
 
-    final t = 0.98;
+  void _paintAutoTransicao(Canvas canvas, Offset centro, Paint paint) {
+    final g = geometriaAutoTransicao(centro);
+    canvas.drawPath(pathAutoTransicao(centro), paint);
+    _desenharSetaCubica(canvas, g.inicio, g.controle1, g.controle2, g.fim, paint.color);
+    _desenharRotulos(
+      canvas,
+      pontoBezierCubica(g.inicio, g.controle1, g.controle2, g.fim, 0.5),
+    );
+  }
+
+  void _desenharSetaCubica(
+    Canvas canvas,
+    Offset start,
+    Offset c1,
+    Offset c2,
+    Offset end,
+    Color cor,
+  ) {
+    const t = 0.98;
+    final arrowTip = pontoBezierCubica(start, c1, c2, end, t);
+    final arrowBase = pontoBezierCubica(start, c1, c2, end, t - 0.04);
+    final angle = math.atan2(arrowTip.dy - arrowBase.dy, arrowTip.dx - arrowBase.dx);
+    const arrowSize = 12.0;
+
+    final arrowPath = Path()
+      ..moveTo(arrowTip.dx, arrowTip.dy)
+      ..lineTo(
+        arrowTip.dx - arrowSize * math.cos(angle - 0.4),
+        arrowTip.dy - arrowSize * math.sin(angle - 0.4),
+      )
+      ..lineTo(
+        arrowTip.dx - arrowSize * math.cos(angle + 0.4),
+        arrowTip.dy - arrowSize * math.sin(angle + 0.4),
+      )
+      ..close();
+
+    canvas.drawPath(
+      arrowPath,
+      Paint()
+        ..color = cor
+        ..style = PaintingStyle.fill,
+    );
+  }
+
+  void _desenharSeta(Canvas canvas, Offset start, Offset control, Offset end, Color cor) {
+    const t = 0.98;
     final arrowTip = _pointOnQuad(start, control, end, t);
     final arrowBase = _pointOnQuad(start, control, end, t - 0.04);
     final angle = math.atan2(arrowTip.dy - arrowBase.dy, arrowTip.dx - arrowBase.dx);
@@ -248,12 +344,9 @@ class TransicaoPainter extends CustomPainter {
     canvas.drawPath(
       arrowPath,
       Paint()
-        ..color = paint.color
+        ..color = cor
         ..style = PaintingStyle.fill,
     );
-
-    final labelPos = _pointOnQuad(start, control, end, 0.5);
-    _desenharRotulos(canvas, labelPos);
   }
 
   void _desenharRotulos(Canvas canvas, Offset labelPos) {

@@ -1,0 +1,11 @@
+{
+  "name": "simulador_maquina_de_turing",
+  "private": true,
+  "scripts": {
+    "build:web": "flutter build web --base-href=/simulador_maquina_de_turing/",
+    "deploy": "npm run build:web && gh-pages -d build/web"
+  },
+  "devDependencies": {
+    "gh-pages": "^6.3.0"
+  }
+}
